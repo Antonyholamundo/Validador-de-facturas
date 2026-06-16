@@ -1,9 +1,16 @@
 import os
+import requests
+import urllib3
 from datetime import datetime
 from flask import Flask, request, jsonify, render_template, send_from_directory, render_template_string
 from flask_cors import CORS
 from zeep import Client
+from zeep.transports import Transport
 import logging
+
+# El SRI Ecuador tiene un problema conocido: su certificado SSL no coincide con la IP
+# a la que redirige (181.113.227.222). Se desactivan las advertencias para evitar ruido en logs.
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 app = Flask(__name__)
 CORS(app)
@@ -86,25 +93,53 @@ class ValidadorSRI:
     def __init__(self):
         self.wsdl_produccion = 'https://cel.sri.gob.ec/comprobantes-electronicos-ws/AutorizacionComprobantesOffline?wsdl'
         self.wsdl_pruebas = 'https://celcer.sri.gob.ec/comprobantes-electronicos-ws/AutorizacionComprobantesOffline?wsdl'
+        # Timeout en segundos para conexión y lectura
+        self.timeout = 30
+
+    def _verificar_conectividad(self, url):
+        """Verifica si el servidor SRI es alcanzable antes de iniciar el cliente SOAP."""
+        try:
+            # verify=False porque el SRI tiene un certificado SSL con mismatch de IP conocido
+            resp = requests.get(url, timeout=self.timeout, verify=False)
+            resp.raise_for_status()
+            return True, None
+        except requests.exceptions.ConnectionError as e:
+            return False, f"No se puede conectar al SRI (sin red o IP bloqueada): {str(e)}"
+        except requests.exceptions.Timeout:
+            return False, f"El SRI tardó más de {self.timeout}s en responder (timeout)."
+        except requests.exceptions.RequestException as e:
+            return False, f"Error de red al contactar al SRI: {str(e)}"
 
     def validar_factura(self, clave_acceso, ambiente='produccion'):
         wsdl_url = self.wsdl_produccion if ambiente == 'produccion' else self.wsdl_pruebas
-        try:
-            client = Client(wsdl_url)
-        except Exception as e:
-            return {"error": "Sin conexión al SRI"}
 
-        if len(clave_acceso) != 49: return {"error": "La clave debe tener 49 dígitos."}
-        
+        if len(clave_acceso) != 49:
+            return {"error": "La clave debe tener 49 dígitos."}
+
+        # Verificar conectividad antes de intentar SOAP
+        alcanzable, error_red = self._verificar_conectividad(wsdl_url)
+        if not alcanzable:
+            logging.error(f"[SRI] Fallo de conectividad: {error_red}")
+            return {"error": error_red}
+
+        try:
+            session = requests.Session()
+            session.verify = False  # SRI tiene certificado SSL con mismatch de IP
+            transport = Transport(session=session, timeout=self.timeout, operation_timeout=self.timeout)
+            client = Client(wsdl_url, transport=transport)
+        except Exception as e:
+            logging.error(f"[SRI] Error al inicializar cliente SOAP: {e}")
+            return {"error": f"No se pudo inicializar el cliente SOAP: {str(e)}"}
+
         try:
             respuesta = client.service.autorizacionComprobante(claveAccesoComprobante=clave_acceso)
             autorizaciones = respuesta.autorizaciones
-            
+
             if not autorizaciones or not autorizaciones.autorizacion:
                 return {"valida": False, "estado": "NO ENCONTRADO", "mensaje": "Clave no existe en este ambiente."}
-            
+
             info = autorizaciones.autorizacion[0]
-            
+
             return {
                 "valida": info.estado == "AUTORIZADO",
                 "estado": info.estado,
@@ -112,7 +147,8 @@ class ValidadorSRI:
                 "ambiente": info.ambiente
             }
         except Exception as e:
-            return {"error": str(e)}
+            logging.error(f"[SRI] Error en la consulta SOAP: {e}")
+            return {"error": f"Error al consultar el SRI: {str(e)}"}
 
 validador = ValidadorSRI()
 
