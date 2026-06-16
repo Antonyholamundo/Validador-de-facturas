@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Validador de Facturas SRI</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+
+    <div class="container">
+        <h1>Validador SRI</h1>
+        <p class="description">Verifica el estado de tus facturas electrónicas ingresando la clave de acceso de 49
+            dígitos.</p>
+
+        <div class="form-group">
+            <select id="ambiente">
+                <option value="produccion">Producción</option>
+                <option value="pruebas">Pruebas (Desarrollo)</option>
+            </select>
+
+            <label for="claveAcceso">Clave de Acceso (49 dígitos)</label>
+            <input type="text" id="claveAcceso" maxlength="49"
+                placeholder="0000000000000000000000000000000000000000000000000" autocomplete="off"
+                oninput="this.value = this.value.replace(/[^0-9]/g, '')">
+        </div>
+
+        <button id="btnValidar" onclick="validarFactura()">Validar Factura</button>
+
+        <div class="loader" id="loader">
+            <div class="spinner"></div>
+            <div style="color: var(--text-muted); font-size: 0.9rem;">Consultando al SRI...</div>
+        </div>
+
+        <div id="result"></div>
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+
+</body>
+
+</html>

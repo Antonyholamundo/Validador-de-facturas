@@ -1,0 +1,159 @@
+ :root {
+     --primary: #2563eb;
+     --primary-hover: #1d4ed8;
+     --bg-color: #f3f4f6;
+     --card-bg: #ffffff;
+     --text-main: #1f2937;
+     --text-muted: #6b7280;
+     --success-bg: #dcfce7;
+     --success-text: #166534;
+     --error-bg: #fee2e2;
+     --error-text: #991b1b;
+     --border: #e5e7eb;
+ }
+
+ body {
+     font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+     background-color: var(--bg-color);
+     color: var(--text-main);
+     margin: 0;
+     padding: 0;
+     display: flex;
+     justify-content: center;
+     align-items: center;
+     min-height: 100vh;
+ }
+
+ .container {
+     background-color: var(--card-bg);
+     padding: 2.5rem;
+     border-radius: 12px;
+     box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+     width: 100%;
+     max-width: 480px;
+ }
+
+ h1 {
+     font-size: 1.5rem;
+     font-weight: 700;
+     text-align: center;
+     margin-bottom: 0.5rem;
+     color: var(--text-main);
+ }
+
+ p.description {
+     text-align: center;
+     color: var(--text-muted);
+     margin-bottom: 2rem;
+     font-size: 0.95rem;
+ }
+
+ .form-group {
+     margin-bottom: 1.5rem;
+ }
+
+ label {
+     display: block;
+     margin-bottom: 0.5rem;
+     font-weight: 500;
+     font-size: 0.9rem;
+ }
+
+ input[type="text"] {
+     width: 100%;
+     padding: 0.75rem;
+     border: 1px solid var(--border);
+     border-radius: 6px;
+     font-size: 1rem;
+     outline: none;
+     transition: border-color 0.2s;
+     box-sizing: border-box;
+     font-family: monospace;
+     text-align: center;
+     letter-spacing: 1px;
+ }
+
+ input[type="text"]:focus {
+     border-color: var(--primary);
+     box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+ }
+
+ button {
+     width: 100%;
+     background-color: var(--primary);
+     color: white;
+     border: none;
+     padding: 0.875rem;
+     border-radius: 6px;
+     font-size: 1rem;
+     font-weight: 600;
+     cursor: pointer;
+     transition: background-color 0.2s;
+ }
+
+ button:hover {
+     background-color: var(--primary-hover);
+ }
+
+ button:disabled {
+     background-color: #93c5fd;
+     cursor: not-allowed;
+ }
+
+ .loader {
+     display: none;
+     text-align: center;
+     margin-top: 1.5rem;
+ }
+
+ .spinner {
+     border: 3px solid rgba(0, 0, 0, 0.1);
+     border-radius: 50%;
+     border-top: 3px solid var(--primary);
+     width: 24px;
+     height: 24px;
+     animation: spin 1s linear infinite;
+     margin: 0 auto 0.5rem auto;
+ }
+
+ @keyframes spin {
+     0% {
+         transform: rotate(0deg);
+     }
+
+     100% {
+         transform: rotate(360deg);
+     }
+ }
+
+ #result {
+     margin-top: 1.5rem;
+     padding: 1rem;
+     border-radius: 6px;
+     display: none;
+     font-size: 0.95rem;
+ }
+
+ .success {
+     background-color: var(--success-bg);
+     color: var(--success-text);
+     border: 1px solid #bbf7d0;
+ }
+
+ .error {
+     background-color: var(--error-bg);
+     color: var(--error-text);
+     border: 1px solid #fecaca;
+ }
+
+ .result-item {
+     margin-bottom: 0.5rem;
+ }
+
+ .result-item:last-child {
+     margin-bottom: 0;
+ }
+
+ .result-label {
+     font-weight: 600;
+ }
