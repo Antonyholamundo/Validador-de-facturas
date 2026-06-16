@@ -93,22 +93,33 @@ class ValidadorSRI:
     def __init__(self):
         self.wsdl_produccion = 'https://cel.sri.gob.ec/comprobantes-electronicos-ws/AutorizacionComprobantesOffline?wsdl'
         self.wsdl_pruebas = 'https://celcer.sri.gob.ec/comprobantes-electronicos-ws/AutorizacionComprobantesOffline?wsdl'
-        # Timeout en segundos para conexión y lectura
         self.timeout = 30
+        self.max_reintentos = 3
+        # Headers que simulan un navegador real para evitar bloqueos por User-Agent
+        self.headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'es-EC,es;q=0.9',
+            'Connection': 'keep-alive',
+        }
 
-    def _verificar_conectividad(self, url):
-        """Verifica si el servidor SRI es alcanzable antes de iniciar el cliente SOAP."""
-        try:
-            # verify=False porque el SRI tiene un certificado SSL con mismatch de IP conocido
-            resp = requests.get(url, timeout=self.timeout, verify=False)
-            resp.raise_for_status()
-            return True, None
-        except requests.exceptions.ConnectionError as e:
-            return False, f"No se puede conectar al SRI (sin red o IP bloqueada): {str(e)}"
-        except requests.exceptions.Timeout:
-            return False, f"El SRI tardó más de {self.timeout}s en responder (timeout)."
-        except requests.exceptions.RequestException as e:
-            return False, f"Error de red al contactar al SRI: {str(e)}"
+    def _crear_session(self):
+        """Crea una sesión HTTP configurada para conectarse al SRI."""
+        session = requests.Session()
+        session.verify = False  # SRI tiene certificado SSL con mismatch de IP conocido
+        session.headers.update(self.headers)
+
+        # Retry automático ante connection reset (hasta 3 veces con backoff)
+        retry = urllib3.util.retry.Retry(
+            total=self.max_reintentos,
+            backoff_factor=1.5,
+            status_forcelist=[500, 502, 503, 504],
+            allowed_methods=["GET", "POST"],
+        )
+        adapter = requests.adapters.HTTPAdapter(max_retries=retry)
+        session.mount('https://', adapter)
+        session.mount('http://', adapter)
+        return session
 
     def validar_factura(self, clave_acceso, ambiente='produccion'):
         wsdl_url = self.wsdl_produccion if ambiente == 'produccion' else self.wsdl_pruebas
@@ -116,39 +127,47 @@ class ValidadorSRI:
         if len(clave_acceso) != 49:
             return {"error": "La clave debe tener 49 dígitos."}
 
-        # Verificar conectividad antes de intentar SOAP
-        alcanzable, error_red = self._verificar_conectividad(wsdl_url)
-        if not alcanzable:
-            logging.error(f"[SRI] Fallo de conectividad: {error_red}")
-            return {"error": error_red}
+        ultimo_error = None
+        for intento in range(1, self.max_reintentos + 1):
+            try:
+                logging.info(f"[SRI] Intento {intento}/{self.max_reintentos} — ambiente: {ambiente}")
+                session = self._crear_session()
+                transport = Transport(session=session, timeout=self.timeout, operation_timeout=self.timeout)
+                client = Client(wsdl_url, transport=transport)
 
-        try:
-            session = requests.Session()
-            session.verify = False  # SRI tiene certificado SSL con mismatch de IP
-            transport = Transport(session=session, timeout=self.timeout, operation_timeout=self.timeout)
-            client = Client(wsdl_url, transport=transport)
-        except Exception as e:
-            logging.error(f"[SRI] Error al inicializar cliente SOAP: {e}")
-            return {"error": f"No se pudo inicializar el cliente SOAP: {str(e)}"}
+                respuesta = client.service.autorizacionComprobante(claveAccesoComprobante=clave_acceso)
+                autorizaciones = respuesta.autorizaciones
 
-        try:
-            respuesta = client.service.autorizacionComprobante(claveAccesoComprobante=clave_acceso)
-            autorizaciones = respuesta.autorizaciones
+                if not autorizaciones or not autorizaciones.autorizacion:
+                    return {"valida": False, "estado": "NO ENCONTRADO", "mensaje": "Clave no existe en este ambiente."}
 
-            if not autorizaciones or not autorizaciones.autorizacion:
-                return {"valida": False, "estado": "NO ENCONTRADO", "mensaje": "Clave no existe en este ambiente."}
+                info = autorizaciones.autorizacion[0]
+                return {
+                    "valida": info.estado == "AUTORIZADO",
+                    "estado": info.estado,
+                    "fecha_autorizacion": str(info.fechaAutorizacion),
+                    "ambiente": info.ambiente
+                }
 
-            info = autorizaciones.autorizacion[0]
+            except requests.exceptions.ConnectionError as e:
+                ultimo_error = str(e)
+                logging.warning(f"[SRI] Intento {intento} fallido — ConnectionError: {ultimo_error}")
+                if intento < self.max_reintentos:
+                    import time
+                    time.sleep(intento * 2)  # backoff: 2s, 4s
+            except requests.exceptions.Timeout:
+                ultimo_error = f"El SRI no respondió en {self.timeout}s (timeout)."
+                logging.warning(f"[SRI] Intento {intento} fallido — Timeout")
+                if intento < self.max_reintentos:
+                    import time
+                    time.sleep(intento * 2)
+            except Exception as e:
+                ultimo_error = str(e)
+                logging.error(f"[SRI] Error inesperado en intento {intento}: {ultimo_error}")
+                break  # Errores no-red no se reintentan
 
-            return {
-                "valida": info.estado == "AUTORIZADO",
-                "estado": info.estado,
-                "fecha_autorizacion": str(info.fechaAutorizacion),
-                "ambiente": info.ambiente
-            }
-        except Exception as e:
-            logging.error(f"[SRI] Error en la consulta SOAP: {e}")
-            return {"error": f"Error al consultar el SRI: {str(e)}"}
+        logging.error(f"[SRI] Todos los intentos fallaron. Último error: {ultimo_error}")
+        return {"error": f"No se pudo conectar al SRI después de {self.max_reintentos} intentos. Detalle: {ultimo_error}"}
 
 validador = ValidadorSRI()
 
